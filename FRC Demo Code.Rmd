@@ -1,0 +1,101 @@
+---
+title: "FRC True Cost Draft"
+author: "Kyle Zorn"
+date: "7/10/2023"
+output: html_document
+---
+
+```{r}
+#install.packages("readxl") ##erase hashtags if you need to install the packages
+#install.packages("dplyr")
+#install.packages("shiny")
+library(readxl)
+library(dplyr)
+
+df <- read_excel("~/SFTA/Mock FRC Data.xlsx") ##change this to your working directory with the file
+df
+```
+
+## Shiny App (correct)
+
+```{r, warning=FALSE}
+library(shiny)
+
+# Load the dataset
+df <- read_excel("Mock FRC Data.xlsx")
+
+# Convert all relevant columns to numeric
+numeric_cols <- c("Total Budget", "Primary Budget", "Secondary Budget",
+                  "Number of Families", "Adults Served", "Children Served",
+                  "Staff", "Programs Offered")
+df[numeric_cols] <- lapply(df[numeric_cols], as.numeric)
+
+# Rename the columns to remove spaces
+colnames(df) <- c("County", "Type", "RR_Region", "Sf_Agency_ID", "YS_Region", "Name",
+                  "Rural_Urban_County", "Total_Budget", "Primary_Budget", "Secondary_Budget",
+                  "Number_of_Families", "Adults_Served", "Children_Served", "Staff", "Programs_Offered")
+
+# Define the UI for the Shiny app
+ui <- fluidPage(
+  titlePanel("FRC Cost Prediction"),
+  sidebarLayout(
+    sidebarPanel(
+      selectInput("county_type", "Select County Type:",
+                  choices = c("Urban", "Rural"),
+                  selected = "Urban"),
+      numericInput("num_families", "Number of Families:", value = 0),
+      numericInput("adults_served", "Adults Served:", value = 0),
+      numericInput("children_served", "Children Served:", value = 0),
+      numericInput("num_staff", "Number of Staff:", value = 0),
+      numericInput("num_programs", "Programs Offered:", value = 0),
+      actionButton("predict_button", "Predict")
+    ),
+    mainPanel(
+      verbatimTextOutput("result_text")
+    )
+  )
+)
+
+# Define the server for the Shiny app
+server <- function(input, output) {
+  # Filter the data based on county_type
+  filtered_data <- reactive({
+    df[df$Rural_Urban_County == input$county_type, ]
+  })
+
+  # Fit the linear regression model to the filtered data
+  lm_model <- reactive({
+    lm(Total_Budget ~ Number_of_Families + Adults_Served +
+         Children_Served + Staff + Programs_Offered, data = filtered_data())
+  })
+
+  # Predict the output based on user inputs
+  predictions <- eventReactive(input$predict_button, {
+    new_data <- data.frame(Number_of_Families = input$num_families,
+                           Adults_Served = input$adults_served,
+                           Children_Served = input$children_served,
+                           Staff = input$num_staff,
+                           Programs_Offered = input$num_programs)
+
+    predict(lm_model(), newdata = new_data, interval = "confidence")
+  })
+
+  # Output the result
+  output$result_text <- renderPrint({
+    predictions <- predictions()
+    lower_bound <- min(predictions)
+    upper_bound <- max(predictions)
+    median_value <- median(predictions)
+
+    cat("The annual cost to run an FRC is between $", round(lower_bound, 2),
+        " and $", round(upper_bound, 2), " with a median of $", round(median_value, 2), "\n")
+  })
+}
+
+# Run the Shiny app
+shinyApp(ui, server)
+
+```
+
+
+
